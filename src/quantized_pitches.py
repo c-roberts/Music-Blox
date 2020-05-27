@@ -2,9 +2,10 @@
 import numpy as np
 import cv2
 import simpleaudio as sa
-import winsound
+#import winsound
 import threading
 from scipy import interpolate
+
 
 f_map = {
     1 : 261,
@@ -16,12 +17,17 @@ f_map = {
     7 : 587,
     8 : 659}
 
+
+
 def playNote(x, y):
     #winsound.Beep(((x+50)*2), y)
 
     # quantize to scale
     m = interpolate.interp1d([0,515],[1,8])
     f_i = int(m(x))
+
+    v = interpolate.interp1d([0,390],[0,1])
+    vol = v(y)
 
     # calculate note frequencies
     A_freq = f_map[f_i]
@@ -34,9 +40,9 @@ def playNote(x, y):
     t = np.linspace(0, T, int(T * sample_rate), False)
 
     # generate sine wave notes
-    A_note = np.sin(A_freq * t * 2 * np.pi)
-    Csh_note = np.sin(Csh_freq * t * 2 * np.pi)
-    E_note = np.sin(E_freq * t * 2 * np.pi)
+    A_note = np.sin(A_freq * t * 2 * np.pi) * vol
+    #Csh_note = np.sin(Csh_freq * t * 2 * np.pi)
+    #E_note = np.sin(E_freq * t * 2 * np.pi)
 
     # concatenate notes
     #audio = np.hstack((A_note, Csh_note, E_note))
@@ -44,7 +50,7 @@ def playNote(x, y):
     # normalize to 16-bit range
     audio *= 32767 / np.max(np.abs(audio))
     # convert to 16-bit data
-    audio = audio.astype(np.int16) // 450
+    audio = (audio.astype(np.int16) // 450) 
 
     # start playback
     play_obj = sa.play_buffer(audio, 1, 2, sample_rate)
@@ -53,7 +59,7 @@ def playNote(x, y):
     play_obj.wait_done()
 
 
-cap = cv2.VideoCapture(1)
+cap = cv2.VideoCapture(0)
 
 # take first frame of the video
 ret,frame = cap.read()
@@ -85,7 +91,6 @@ while(1):
         # Draw it on image
         x,y,w,h = track_window
         #print('{},{}'.format(x,y))
-        #print(x)
 
         nt = threading.Thread(target=playNote, args=[x, y])
         nt.start()
