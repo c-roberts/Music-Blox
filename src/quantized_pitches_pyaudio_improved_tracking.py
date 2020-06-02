@@ -15,35 +15,46 @@ from scipy import interpolate
 from scipy import signal
 
 import pyaudio
+x_norm = interpolate.interp1d([0, 600],[1,8])
+y_norm = interpolate.interp1d([0, 450], [1.1, 0.1])
+z_norm_green = interpolate.interp1d([20, 200],[0.5,1.5])
+z_norm_blue = interpolate.interp1d([60, 200],[0.8,2.0])
 
+fade = 1000 #ms
 
-def playNote(x, y, c=0):
+fade_in = np.arange(0., 1., 1/fade)
+fade_out = np.arange(1., 0., -1/fade)
+
+def playNote(x, y, c, v):
     # quantize to scale
-    m = interpolate.interp1d([0, 600],[1,8])
-    f_i = int(m(x))
+    
+    f_i = int(x_norm(x))
+    
 
-    v = interpolate.interp1d([0, 450],[0,1])
-
-    volume = v(y)     # range [0.0, 1.0]
+    volume = v 
     fs = 44100 // 6       # sampling rate, Hz, must be integer
-    duration = 0.4  # in seconds, may be float
+    duration = y_norm(y)  # in seconds, may be float
     f = f_map[f_i]        # sine frequency, Hz, may be float
 
     # generate samples, note conversion to float32 array
     if c == 0:
         samples = (np.sin(2*np.pi*np.arange(fs*duration)*f/fs)).astype(np.float32)
+        volume = volume 
     elif c == 1:
         samples = signal.sawtooth(2*np.pi*np.arange(fs*duration)*f/fs).astype(np.float32)
         volume = volume / 20
-    else:
+    else: 
         samples = signal.square(2*np.pi*np.arange(fs*duration)*f/fs).astype(np.float32)
         volume = volume / 20
 
+    samples[:fade] = np.multiply(samples[:fade], fade_in)
+    samples[-fade:] = np.multiply(samples[-fade:], fade_out)
 
     # for paFloat32 sample values must be in range [-1.0, 1.0]
     stream = p.open(format=pyaudio.paFloat32,
                     channels=1,
                     rate=fs,
+                    frames_per_buffer=2048,
                     output=True)
 
     # play. May repeat with different volume values (if done interactively) 
@@ -103,7 +114,7 @@ while True:
         # construct a mask for the color "green", then perform
         # a series of dilations and erosions to remove any small
         # blobs left in the mask
-        mask = cv2.inRange(hsv, redLower, redUpper)
+        mask = cv2.inRange(hsv, greenLower, greenUpper)
         mask = cv2.erode(mask, None, iterations=2)
         mask = cv2.dilate(mask, None, iterations=2)
 
@@ -123,11 +134,19 @@ while True:
             ((x, y), radius) = cv2.minEnclosingCircle(c)
             #print('{},{}'.format(x,y))
 
-            nt = threading.Thread(target=playNote, args=(x, y, 0), daemon=True)
-            nt.start()
+            if radius > 10:
+                if radius < 20:
+                    radius = 20
+                elif radius > 200:
+                    radius = 200
+                v = z_norm_green(radius) ** 2
+                nt = threading.Thread(target=playNote, args=(x, y, 0, v), daemon=True)
+                nt.start()
 
             M = cv2.moments(c)
             center = (int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"]))
+
+
             '''
             # only proceed if the radius meets a minimum size
             if radius > 10:
@@ -163,9 +182,15 @@ while True:
             ((x, y), radius) = cv2.minEnclosingCircle(c)
             #print('{},{}'.format(x,y))
 
-            nt = threading.Thread(target=playNote, args=(x, y, 2), daemon=True)
-            nt.start()
-
+            if radius > 10:
+                if radius < 60:
+                    radius = 60
+                elif radius > 200:
+                    radius = 200
+                v = z_norm_blue(radius) ** 2
+                nt = threading.Thread(target=playNote, args=(x, y, 2, v), daemon=True)
+                nt.start()
+            
             M = cv2.moments(c)
             center = (int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"]))
             '''
@@ -181,7 +206,7 @@ while True:
 
 
         # show the frame to our screen and increment the frame counter
-        #cv2.imshow("Frame", frame)
+        cv2.imshow("Frame", frame)
         key = cv2.waitKey(250) & 0xFF
 
         # if the 'q' key is pressed, stop the loop
